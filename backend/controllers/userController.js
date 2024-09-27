@@ -1,11 +1,10 @@
-import userModel from "../models/userModel.js";
-import jwt from 'jsonwebtoken';
-import validator from 'validator'
-import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+import userModel from '../models/userModel.js'
+import { encryptPassword, matchPassword } from '../helper/authHelper.js'
 
-// register user
-let registerUser = async (req, res) => {
-    let { name, email, password } = req.body
+//this is my controller for the registration
+export let registerUser = async (req, res) => {
+    let { email, name, password, address, phone, answer, role } = req.body
     try {
         if (!name) {
             return res.status(500).send({ message: "Name is required *" })
@@ -16,66 +15,65 @@ let registerUser = async (req, res) => {
         if (!password) {
             return res.status(500).send({ message: "Password is required *" })
         }
-        if (!validator.isEmail(email)) {
-            return res.status(500).send({ success: false, message: 'Please enter valid email' })
-        }
         let findUser = await userModel.findOne({ email: email })
         if (findUser) {
             return res.status(500).send({ message: "User is already registered" })
         }
-        if (password.length < 8) {
-            return res.status(500).send({ success: false, message: "Please enter strong password" })
-        }
-
-        // hashing user password
-        const salt = await bcrypt.genSalt(10)
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const newUser = new userModel({
-            name: name,
-            email: email,
-            password: hashedPassword
-        })
-
-        await newUser.save()
+        let hasshedPassword = await encryptPassword(password)
+        let user = new userModel({
+            name,
+            password: hasshedPassword,
+            email
+        }).save()
         res.status(201).send({ message: "User is registered Successfully", success: true })
-    } catch (error) {
-        console.log(error);
-        res.status(500).send({ success: false, message: "Something went wrong while registration" })
+    }
+    catch (error) {
+        console.log(error)
+        res.status(500).send({
+            message: "Something wrong while registration",
+            success: false
+        })
     }
 }
 
-
-const createToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET)
-}
-
-
-
-// login user
-const loginUser = async (req, res) => {
-    const {email, password } = req.body;
+// This is my controller for the login 
+export let loginUser = async (req, res) => {
     try {
+        let { email, password } = req.body
         if (!email) {
-            return res.status(500).send({ success: false, message: "email required" })
+            res.status(500).send({ message: "Email field is required" })
         }
         if (!password) {
-            return res.status(500).send({ success: false, message: "password required" })
+            res.status(500).send({ message: "Password field is required" })
         }
-        const user = await userModel.findOne({ email })
-        if (!user) {
-            return res.status(400).send({ success: false, message: "user does not exist" })
+        // console.log("************************************************")
+        let existingUser = await userModel.findOne({ email: email })
+        // console.log("existingUser", existingUser)
+        if (!existingUser) {
+            return res.status(200).send({ message: "Either Email or Password is invalid" })
         }
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).send({ success: false, message: "Invalid password" })
+        let result = await matchPassword(password, existingUser.password)
+        if (!result) {
+            return res.status(200).send({ message: "Either Email or Password is invalid" })
         }
-        const token = createToken(user._id);
-        res.status(200).send({ success: true, message: "Successfully Login", token })
+        // create a token.
+        let token = await jwt.sign({ _id: existingUser._id },
+            process.env.JWT_SECRET, { expiresIn: "7d" });
+        res.status(200).send({
+            message: "User Login Successfully",
+            success: true,
+            user: {
+                name: existingUser.name,
+                email: existingUser.email
+
+            }, token
+        })
     } catch (error) {
-        console.log(error);
-        res.status(500).send({ success: false, message: "Error while login" })
+        console.log(error)
+        res.status(500).send({ message: "Something wrong while longin", success: false, error })
+
     }
+
 }
 
-export { loginUser, registerUser }
+// export { registerUser, loginUser }
